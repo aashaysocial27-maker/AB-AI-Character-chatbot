@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Illustrated portrait: The Detective (simulation)">
+  <rect width="200" height="200" fill="#FCEBDD"/>
+  <circle cx="160" cy="150" r="38" fill="#F9DCC5"/>
+  <g fill="none" stroke="#E0803F" stroke-width="3.5" stroke-linecap="round">
+    <circle cx="156" cy="146" r="13"/><path d="M165 156l12 12"/>
+  </g>
+  <path d="M38 200c4-38 30-56 62-56s58 18 62 56z" fill="#6E5139"/>
+  <path d="M52 182c10-22 28-34 48-34s38 12 48 34c-14-8-30-12-48-12s-34 4-48 12z" fill="#856447"/>
+  <path d="M88 136h24v14c0 6-24 6-24 0z" fill="#E9BE98"/>
+  <ellipse cx="100" cy="104" rx="31" ry="39" fill="#F3CFAB"/>
+  <path d="M64 84c0-24 16-38 36-38s36 14 36 38z" fill="#9A7752"/>
+  <path d="M56 86c14-6 30-8 44-8s30 2 44 8c-14 4-30 5-44 5s-30-1-44-5z" fill="#856447"/>
+  <path d="M100 46v38" stroke="#7C5E40" stroke-width="2"/>
+  <circle cx="88" cy="106" r="3" fill="#33281F"/><circle cx="112" cy="106" r="3" fill="#33281F"/>
+  <path d="M92 126h16" stroke="#AE7452" stroke-width="3" fill="none" stroke-linecap="round"/>
+</svg>
