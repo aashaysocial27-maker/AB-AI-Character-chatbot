@@ -1,5 +1,8 @@
 import { UserRound } from "lucide-react";
 import type { ChatMessage } from "@/lib/chat-types";
+
+/** A chat message plus, for replies, which provider/model wrote it. */
+export type DisplayMessage = ChatMessage & { via?: string };
 import type { Persona } from "@/lib/personas";
 import { Markdown } from "./Markdown";
 import { Portrait } from "./Portrait";
@@ -9,7 +12,7 @@ export function MessageBubble({
   persona,
   streaming,
 }: {
-  message: ChatMessage;
+  message: DisplayMessage;
   persona: Persona;
   streaming?: boolean;
 }) {
@@ -31,7 +34,7 @@ export function MessageBubble({
       <Portrait persona={persona} size={32} />
       <div className="min-w-0 max-w-[85%]">
         <p className="mb-1 text-xs text-muted">
-          {persona.name} <span className="text-muted/70">· simulation</span>
+          {persona.name} <span className="text-muted/70">· simulation{message.via ? ` · ${message.via}` : ""}</span>
         </p>
         <div className="rounded-2xl rounded-tl-md border border-line bg-white px-4 py-3">
           {message.text ? (

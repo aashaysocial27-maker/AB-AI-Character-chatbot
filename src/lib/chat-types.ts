@@ -9,12 +9,10 @@ export interface ChatMessage {
 
 /** Exactly what the browser POSTs to /api/chat. */
 export interface ChatRequestBody {
-  personaId: string;
+  provider: string;
   model: string;
+  personaId: string;
   systemInstruction: string;
   /** Full conversation so far; the last entry is the new user prompt. */
   messages: ChatMessage[];
 }
-
-/** Header that carries a visitor's own Gemini key. */
-export const KEY_HEADER = "x-gemini-key";

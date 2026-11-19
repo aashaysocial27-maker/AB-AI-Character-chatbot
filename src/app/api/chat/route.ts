@@ -1,6 +1,5 @@
-import { describeGeminiError, streamReply } from "@/lib/gemini";
+import { STREAMERS, describeProviderError } from "@/lib/llm";
 import { isPlausibleKey, validateChatRequest } from "@/lib/validation";
-import { KEY_HEADER } from "@/lib/chat-types";
 
 // Never cache, never prerender: every reply depends on the request.
 export const dynamic = "force-dynamic";
@@ -14,23 +13,14 @@ function jsonError(message: string, status: number) {
 /**
  * POST /api/chat
  *
- * Body: { personaId, model, systemInstruction, messages }
- * Header (optional): x-gemini-key — the visitor's own key. Falls back to GEMINI_API_KEY.
+ * Body: { provider, model, personaId, systemInstruction, messages }
+ * Header (optional): the provider's key header (x-gemini-key, x-anthropic-key,
+ * x-openai-key or x-groq-key). Falls back to the provider's variable in .env.local.
  *
  * Streams the reply back as plain UTF-8 text (Markdown). The key is used only
  * for this request: it is not logged, stored, or included in any response.
  */
 export async function POST(request: Request) {
-  // Resolve the key: visitor header first, then local env.
-  const headerKey = request.headers.get(KEY_HEADER)?.trim() ?? "";
-  const apiKey = headerKey || process.env.GEMINI_API_KEY?.trim() || "";
-  if (!apiKey) {
-    return jsonError("Add a Gemini API key to start chatting.", 401);
-  }
-  if (!isPlausibleKey(apiKey)) {
-    return jsonError("That does not look like a Gemini API key.", 400);
-  }
-
   // Parse and validate the body.
   const raw = await request.text();
   if (raw.length > MAX_BODY_BYTES) return jsonError("Request is too large.", 413);
@@ -42,9 +32,19 @@ export async function POST(request: Request) {
   }
   const result = validateChatRequest(body);
   if (!result.ok) return jsonError(result.error, 400);
-  const { persona, model, messages } = result.value;
+  const { provider, model, persona, messages } = result.value;
 
-  const chunks = streamReply({
+  // Resolve the key: visitor header first, then the provider's variable in .env.local.
+  const headerKey = request.headers.get(provider.keyHeader)?.trim() ?? "";
+  const apiKey = headerKey || process.env[provider.envVar]?.trim() || "";
+  if (!apiKey) {
+    return jsonError(`Add a ${provider.label} API key to start chatting.`, 401);
+  }
+  if (!isPlausibleKey(apiKey)) {
+    return jsonError(`That does not look like a ${provider.label} API key.`, 400);
+  }
+
+  const chunks = STREAMERS[provider.id]({
     apiKey,
     model,
     systemInstruction: persona.systemInstruction,
@@ -58,8 +58,8 @@ export async function POST(request: Request) {
   try {
     first = await chunks.next();
   } catch (error) {
-    const { status, message } = describeGeminiError(error);
-    console.error(`[api/chat] Gemini request failed (status ${status})`);
+    const { status, message } = describeProviderError(error, provider.label);
+    console.error(`[api/chat] ${provider.label} request failed (status ${status})`);
     return jsonError(message, status);
   }
 
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
         controller.close();
       } catch {
         if (request.signal.aborted) return controller.close();
-        console.error("[api/chat] Gemini stream interrupted");
+        console.error(`[api/chat] ${provider.label} stream interrupted`);
         controller.error(new Error("stream interrupted"));
       }
     },

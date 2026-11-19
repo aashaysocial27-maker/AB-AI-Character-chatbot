@@ -6,7 +6,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Persona Chat — system prompt vs user prompt",
   description:
-    "Pick a simulated character, ask a question and see how the system instruction changes a Gemini reply.",
+    "Pick a simulated character, ask a question and see how the system instruction changes the reply from Gemini, Claude, GPT or Groq-hosted models.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
