@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Illustrated portrait: The Physicist (simulation)">
+  <rect width="200" height="200" fill="#E4F4EA"/>
+  <circle cx="40" cy="46" r="38" fill="#D2EDDC"/>
+  <g fill="none" stroke="#2E9E6A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M33 30h14M36 30v16l-10 18c-2 4 0 8 5 8h18c5 0 7-4 5-8l-10-18V30"/>
+    <path d="M30 60h20"/>
+  </g>
+  <path d="M38 200c4-38 30-56 62-56s58 18 62 56z" fill="#2C3531"/>
+  <path d="M82 146l18 14 18-14" fill="#F4F1EA" stroke="#F4F1EA" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M88 136h24v14c0 6-24 6-24 0z" fill="#EBC3A0"/>
+  <ellipse cx="100" cy="102" rx="32" ry="39" fill="#F4D1B0"/>
+  <circle cx="100" cy="52" r="16" fill="#8B7465"/>
+  <path d="M66 104c-4-30 12-46 34-46s38 16 34 46c-4-16-14-28-34-28s-30 12-34 28z" fill="#8B7465"/>
+  <circle cx="88" cy="104" r="3" fill="#3A2F2A"/><circle cx="112" cy="104" r="3" fill="#3A2F2A"/>
+  <path d="M92 124c5 3 11 3 16 0" stroke="#B07756" stroke-width="3" fill="none" stroke-linecap="round"/>
+</svg>
