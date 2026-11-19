@@ -1,11 +1,12 @@
 import { getPersona, type Persona } from "./personas";
-import { isModelId, type ModelId } from "./models";
+import { getProvider, isValidModel, type Provider } from "./providers";
 import { LIMITS } from "./limits";
 import type { ChatMessage } from "./chat-types";
 
 export interface ValidChatRequest {
+  provider: Provider;
+  model: string;
   persona: Persona;
-  model: ModelId;
   messages: ChatMessage[];
 }
 
@@ -34,7 +35,9 @@ export function validateChatRequest(body: unknown): ValidationResult {
     return fail("System instruction does not match the selected character.");
   }
 
-  if (!isModelId(b.model)) return fail("Unsupported model.");
+  const provider = getProvider(b.provider);
+  if (!provider) return fail("Unknown provider.");
+  if (!isValidModel(b.model)) return fail("That does not look like a valid model ID.");
 
   if (!Array.isArray(b.messages) || b.messages.length === 0) {
     return fail("Conversation is empty.");
@@ -62,7 +65,7 @@ export function validateChatRequest(body: unknown): ValidationResult {
   if (total > LIMITS.maxTotalChars) return fail("Conversation is too long. Start a new chat.");
   if (messages[messages.length - 1].role !== "user") return fail("The last message must be from the user.");
 
-  return { ok: true, value: { persona, model: b.model, messages } };
+  return { ok: true, value: { provider, model: b.model, persona, messages } };
 }
 
 /** Light sanity check on a key from the header. Never echoes the key back. */

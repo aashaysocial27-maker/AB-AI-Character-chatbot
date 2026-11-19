@@ -3,11 +3,12 @@
 import { useRef, useState } from "react";
 import { Info, MessagesSquare } from "lucide-react";
 import type { ChatMessage, ChatRequestBody } from "@/lib/chat-types";
-import { DEFAULT_MODEL, type ModelId } from "@/lib/models";
+import { DEFAULT_PROVIDER, getProvider, type ProviderId } from "@/lib/providers";
 import { DEFAULT_PERSONA_ID, STARTER_QUESTION, getPersona, type PersonaId } from "@/lib/personas";
 import { streamChat } from "@/lib/streamChat";
 import { useSessionKey } from "@/lib/useSessionKey";
 import { ChatPanel } from "./ChatPanel";
+import type { DisplayMessage } from "./MessageBubble";
 import { ComparisonCard, type PreviousReply } from "./ComparisonCard";
 import { PersonaPicker } from "./PersonaPicker";
 import { RequestInspector } from "./RequestInspector";
@@ -17,27 +18,40 @@ import { SystemPromptCard } from "./SystemPromptCard";
 /** The whole screen: state lives here, each panel is its own component. */
 export function PersonaChat() {
   const [personaId, setPersonaId] = useState<PersonaId>(DEFAULT_PERSONA_ID);
-  const [model, setModel] = useState<ModelId>(DEFAULT_MODEL);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [providerId, setProviderId] = useState<ProviderId>(DEFAULT_PROVIDER);
+  const [model, setModel] = useState(getProvider(DEFAULT_PROVIDER)!.defaultModel);
+  const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [draft, setDraft] = useState(STARTER_QUESTION);
   const [lastQuestion, setLastQuestion] = useState(STARTER_QUESTION);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRequest, setLastRequest] = useState<ChatRequestBody | null>(null);
   const [previous, setPrevious] = useState<PreviousReply | null>(null);
-  const [apiKey, setApiKey] = useSessionKey();
+  const [apiKey, setApiKey] = useSessionKey(providerId);
   const abortRef = useRef<AbortController | null>(null);
   // Bumped on every reset so a stream from an old conversation can't write into a new one.
   const conversationRef = useRef(0);
 
   const persona = getPersona(personaId)!;
+  const provider = getProvider(providerId)!;
+  const modelLabel = provider.models.find((m) => m.id === model)?.label ?? model;
+
+  /** The API only needs role and text; strip the UI-only "via" label. */
+  const toApi = (list: DisplayMessage[]): ChatMessage[] => list.map(({ role, text }) => ({ role, text }));
+
+  function changeProvider(id: ProviderId) {
+    setProviderId(id);
+    setModel(getProvider(id)!.defaultModel);
+    setError(null);
+  }
 
   // Preview of the next request, shown before anything is sent.
   const preview: ChatRequestBody = {
-    personaId: persona.id,
+    provider: provider.id,
     model,
+    personaId: persona.id,
     systemInstruction: persona.systemInstruction,
-    messages: [...messages, { role: "user", text: draft.trim() }],
+    messages: [...toApi(messages), { role: "user", text: draft.trim() }],
   };
 
   async function send() {
@@ -45,12 +59,14 @@ export function PersonaChat() {
     if (!text || streaming) return;
 
     const before = messages;
-    const outgoing: ChatMessage[] = [...before, { role: "user", text }];
+    const outgoing: DisplayMessage[] = [...before, { role: "user", text }];
+    const via = `${provider.label} ${modelLabel}`;
     const body: ChatRequestBody = {
-      personaId: persona.id,
+      provider: provider.id,
       model,
+      personaId: persona.id,
       systemInstruction: persona.systemInstruction,
-      messages: outgoing,
+      messages: toApi(outgoing),
     };
 
     const controller = new AbortController();
@@ -59,7 +75,7 @@ export function PersonaChat() {
     const isCurrent = () => conversationRef.current === conversation;
     setLastRequest(body);
     setLastQuestion(text);
-    setMessages([...outgoing, { role: "model", text: "" }]);
+    setMessages([...outgoing, { role: "model", text: "", via }]);
     setDraft("");
     setError(null);
     setStreaming(true);
@@ -69,9 +85,9 @@ export function PersonaChat() {
       for await (const chunk of streamChat(body, apiKey, controller.signal)) {
         reply += chunk;
         const snapshot = reply;
-        if (isCurrent()) setMessages([...outgoing, { role: "model", text: snapshot }]);
+        if (isCurrent()) setMessages([...outgoing, { role: "model", text: snapshot, via }]);
       }
-      if (!reply) throw new Error("Gemini returned an empty reply. Try rephrasing the question.");
+      if (!reply) throw new Error(`${provider.label} returned an empty reply. Try rephrasing or another model.`);
     } catch (err) {
       if (!isCurrent()) return;
       const aborted = controller.signal.aborted;
@@ -108,7 +124,9 @@ export function PersonaChat() {
     // Remember the latest completed answer for side-by-side comparison.
     const lastModel = [...messages].reverse().find((m) => m.role === "model" && m.text);
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
-    if (lastModel && lastUser) setPrevious({ persona, question: lastUser.text, answer: lastModel.text });
+    if (lastModel && lastUser) {
+      setPrevious({ persona, question: lastUser.text, answer: lastModel.text, via: lastModel.via });
+    }
     setPersonaId(id);
     resetChat();
   }
@@ -145,6 +163,8 @@ export function PersonaChat() {
             <PersonaPicker selected={persona} onSelect={switchPersona} />
             <SystemPromptCard persona={persona} />
             <SettingsCard
+              provider={providerId}
+              onProviderChange={changeProvider}
               apiKey={apiKey}
               onApiKeyChange={setApiKey}
               model={model}
@@ -176,7 +196,7 @@ export function PersonaChat() {
         </div>
 
         <footer className="mt-10 text-center text-xs text-muted">
-          Built with Next.js and the Gemini API · Portraits are illustrations, not photos.
+          Built with Next.js · Gemini, Anthropic, OpenAI and Groq APIs · Portraits are illustrations, not photos.
         </footer>
       </main>
     </div>

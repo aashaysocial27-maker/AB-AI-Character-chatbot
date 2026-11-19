@@ -2,11 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import { ArrowUp, MessageSquareText, RotateCcw, Square, TriangleAlert } from "lucide-react";
-import type { ChatMessage } from "@/lib/chat-types";
 import type { Persona } from "@/lib/personas";
 import { LIMITS, MAX_EXCHANGES } from "@/lib/limits";
 import { Card, StepLabel } from "./Card";
-import { MessageBubble } from "./MessageBubble";
+import { MessageBubble, type DisplayMessage } from "./MessageBubble";
 import { Portrait } from "./Portrait";
 
 export function ChatPanel({
@@ -21,7 +20,7 @@ export function ChatPanel({
   error,
 }: {
   persona: Persona;
-  messages: ChatMessage[];
+  messages: DisplayMessage[];
   draft: string;
   onDraftChange: (value: string) => void;
   onSend: () => void;

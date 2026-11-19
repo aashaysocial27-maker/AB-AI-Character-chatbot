@@ -2,13 +2,17 @@
   "name": "persona-chat",
   "version": "0.1.0",
   "private": true,
-  "description": "A teaching app that shows how a system prompt (persona instruction) and a user prompt combine to shape a Gemini reply.",
+  "description": "A teaching app that shows how a system prompt (persona instruction) and a user prompt combine to shape a reply from Gemini, Claude, OpenAI or Groq.",
   "keywords": [
-    "gemini",
     "system-prompt",
     "prompt-engineering",
     "education",
-    "nextjs"
+    "nextjs",
+    "gemini",
+    "anthropic",
+    "claude",
+    "openai",
+    "groq"
   ],
   "repository": {
     "type": "git",
@@ -25,10 +29,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.10.0",
     "@google/genai": "^3.6.1",
     "geist": "^1.9.2",
     "lucide-react": "^1.76.0",
     "next": "^16.4.6",
+    "openai": "^7.60.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",

@@ -1,40 +1,48 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
+import type { ProviderId } from "./providers";
 
 /**
- * The visitor's Gemini key, kept in sessionStorage only.
+ * The visitor's API key for one provider, kept in sessionStorage only.
  * It disappears when the tab closes and is never written to localStorage or cookies.
  */
-const STORAGE_KEY = "persona-chat:gemini-key";
+const storageKey = (provider: ProviderId) => `persona-chat:key:${provider}`;
 const listeners = new Set<() => void>();
-
-function read(): string {
-  try {
-    return window.sessionStorage.getItem(STORAGE_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
 
 function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
-export function useSessionKey() {
-  const key = useSyncExternalStore(subscribe, read, () => "");
+export function readSessionKey(provider: ProviderId): string {
+  try {
+    return window.sessionStorage.getItem(storageKey(provider)) ?? "";
+  } catch {
+    return "";
+  }
+}
 
-  const setKey = useCallback((value: string) => {
-    try {
-      const trimmed = value.trim();
-      if (trimmed) window.sessionStorage.setItem(STORAGE_KEY, trimmed);
-      else window.sessionStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // Storage blocked (private mode etc.): the key simply won't persist.
-    }
-    listeners.forEach((l) => l());
-  }, []);
+export function useSessionKey(provider: ProviderId) {
+  const key = useSyncExternalStore(
+    subscribe,
+    () => readSessionKey(provider),
+    () => "",
+  );
+
+  const setKey = useCallback(
+    (value: string) => {
+      try {
+        const trimmed = value.trim();
+        if (trimmed) window.sessionStorage.setItem(storageKey(provider), trimmed);
+        else window.sessionStorage.removeItem(storageKey(provider));
+      } catch {
+        // Storage blocked (private mode etc.): the key simply won't persist.
+      }
+      listeners.forEach((l) => l());
+    },
+    [provider],
+  );
 
   return [key, setKey] as const;
 }

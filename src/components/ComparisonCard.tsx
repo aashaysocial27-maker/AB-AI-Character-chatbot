@@ -8,6 +8,7 @@ export interface PreviousReply {
   persona: Persona;
   question: string;
   answer: string;
+  via?: string;
 }
 
 /** The previous character's answer, kept so the student can compare after switching. */
@@ -23,7 +24,7 @@ export function ComparisonCard({ previous, onDismiss }: { previous: PreviousRepl
               Compare: previous character
             </p>
             <p className="text-xs text-muted">
-              {previous.persona.name} (simulation) answered the same kind of question with a different system prompt.
+              {previous.persona.name} (simulation{previous.via ? `, ${previous.via}` : ""}) answered with a different system prompt.
             </p>
           </div>
         </div>
