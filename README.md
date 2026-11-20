@@ -131,3 +131,11 @@ Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, lucide-react, rea
 ## Status
 
 The UI and the server's validation and error handling have been tested. Real replies have not yet been recorded from any provider, because that needs real API keys. The OpenAI and Groq model IDs were not verified against those providers' live model lists; use **Custom** if one is not available. A recorded demo will be added after a real run.
+
+## Also in this repo
+
+[`stock-research-agent/`](stock-research-agent/): a chatbot that fetches real market data with tools (Yahoo Finance) and shows every tool call, using Gemini, Claude, OpenAI or Groq. It is a separate Next.js app with its own `package.json`.
+
+## Also in this repo
+
+[`stock-research-agent/`](stock-research-agent/): a chatbot that fetches real market data with tools (Yahoo Finance) and shows every tool call, using Gemini, Claude, OpenAI or Groq. It is a separate Next.js app with its own `package.json`.

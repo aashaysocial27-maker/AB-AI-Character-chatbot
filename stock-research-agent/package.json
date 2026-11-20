@@ -1,0 +1,51 @@
+{
+  "name": "ai-stock-research-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A chatbot that fetches real market data with tools (Yahoo Finance) and shows every tool call, using Gemini, Claude, OpenAI or Groq.",
+  "keywords": [
+    "stocks",
+    "tool-calling",
+    "function-calling",
+    "agent",
+    "nextjs",
+    "gemini",
+    "anthropic",
+    "openai",
+    "groq"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.10.0",
+    "@google/genai": "^3.6.1",
+    "geist": "^1.9.2",
+    "lucide-react": "^1.76.0",
+    "next": "^16.4.6",
+    "openai": "^7.60.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "server-only": "^0.0.1",
+    "yahoo-finance2": "^4.0.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.5",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.6",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^5.9.3"
+  }
+}
