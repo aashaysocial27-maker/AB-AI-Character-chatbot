@@ -3,6 +3,7 @@
 @theme {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Charter, Georgia, serif;
 
   --color-page: #faf8f4;
   --color-ink: #16161a;
@@ -87,4 +88,78 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .stream-caret::after { animation: none; }
+}
+
+/* ---------- Book reader ---------- */
+
+.book-paper {
+  background: #fffdf8;
+  box-shadow:
+    0 1px 2px rgb(60 40 20 / 0.06),
+    0 18px 40px -16px rgb(60 40 20 / 0.22),
+    inset 0 0 0 1px rgb(60 40 20 / 0.05);
+}
+.book-gutter {
+  background: linear-gradient(90deg, transparent, rgb(60 40 20 / 0.07) 45%, rgb(60 40 20 / 0.1) 50%, rgb(60 40 20 / 0.07) 55%, transparent);
+}
+
+.book-text {
+  font-family: var(--font-serif);
+  font-size: 1.075rem;
+  line-height: 1.72;
+  color: #24211c;
+  text-align: justify;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+@media (min-width: 640px) {
+  .book-text { font-size: 1.125rem; }
+}
+.book-text p + p { text-indent: 1.6em; }
+.book-text p { orphans: 2; widows: 2; }
+.book-text .first-para::first-letter {
+  float: left;
+  font-size: 3.4em;
+  line-height: 0.85;
+  padding: 0.08em 0.1em 0 0;
+  color: #16161a;
+}
+
+.book-text .unit {
+  border-radius: 0.2em;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.book-text .unit:hover { background: rgb(22 22 26 / 0.04); }
+.book-text .unit.is-reading { background: #fbe7b5; }
+::highlight(reading-word) {
+  background-color: #f2b84b;
+  color: #16161a;
+}
+
+/* Thin progress slider used by the player. */
+.reader-range {
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-ink) var(--pct, 0%), var(--color-line) var(--pct, 0%));
+  cursor: pointer;
+}
+.reader-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-ink);
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+}
+.reader-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-ink);
+  border: 2px solid white;
 }
