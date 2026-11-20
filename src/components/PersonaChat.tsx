@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Info, MessagesSquare } from "lucide-react";
+import Link from "next/link";
+import { BookOpen, Info, MessagesSquare } from "lucide-react";
 import type { ChatMessage, ChatRequestBody } from "@/lib/chat-types";
 import { DEFAULT_PROVIDER, getProvider, type ProviderId } from "@/lib/providers";
 import { DEFAULT_PERSONA_ID, STARTER_QUESTION, getPersona, type PersonaId } from "@/lib/personas";
@@ -142,6 +143,13 @@ export function PersonaChat() {
               <MessagesSquare className="size-4" strokeWidth={1.75} aria-hidden />
             </span>
             <span className="text-sm font-semibold tracking-tight">Persona Chat</span>
+            <Link
+              href="/reader"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-line bg-white/80 px-3 py-1.5 text-xs font-medium hover:border-black/20"
+            >
+              <BookOpen className="size-3.5" strokeWidth={1.75} aria-hidden />
+              Book Reader
+            </Link>
           </div>
           <h1 className="mt-6 text-3xl font-semibold tracking-tight sm:text-4xl">
             Same question, different system prompt.

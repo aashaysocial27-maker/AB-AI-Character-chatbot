@@ -6,6 +6,19 @@ A student picks an AI character, asks a question, and sees how the system instru
 
 > The characters are **AI simulations** inspired by Elon Musk, Marie Curie and the fictional Sherlock Holmes. They are not the real people, do not speak for them, and can get facts wrong. The portraits are simple illustrations, not photos.
 
+## Book Reader (`/reader`)
+
+A second app in the same project: add a PDF and it becomes a chaptered book that reads itself aloud.
+
+- **PDF → book.** The PDF is parsed in the browser with pdf.js. Running headers and page numbers are removed, hyphenated words rejoined and lines reflowed into paragraphs, shown as two facing pages (one on phones). An **Original** view shows the exact printed pages.
+- **Chapters.** Taken from the PDF's bookmarks when it has them, otherwise found from headings ("Chapter 3", "Prologue", large titles), otherwise grouped by pages.
+- **Read aloud.** Uses the most natural voice your device offers (Edge/Chrome "Natural"/"Online" voices, Apple "Premium"/"Enhanced" voices). Pause, play and resume from the same word; skip sentences or chapters; change speed, voice and pitch; click any sentence to read from there. The current sentence and word are highlighted and pages turn by themselves. The next chapter starts automatically, and headphone buttons work.
+- **Ask questions.** Summarise a chapter, explain the passage you just heard, quiz yourself, or ask anything. The AI gets the current chapter's text and sentence (`POST /api/ask`, same providers and keys as Persona Chat; Claude Sonnet 5.5 by default). Answers can be read aloud.
+- **Word bank.** Double-click (or long-press) a word → **Save word**. It keeps the sentence and chapter, fetches a dictionary meaning (dictionaryapi.dev) and can **Explain in context** with the AI. Practice mode hides meanings for self-testing; export as CSV.
+- **Remembers.** Books are stored in this browser (IndexedDB), with your reading position, word bank and voice settings (localStorage). Nothing is uploaded except the chapter text sent to the AI when you ask a question.
+
+Claude has no speech API, so the voice comes from the browser's Speech Synthesis. Scanned PDFs (images without text) open in the Original view but have nothing to read aloud.
+
 ## How it works
 
 ```
@@ -89,6 +102,8 @@ src/
     globals.css              Tailwind 4 theme, glow, Markdown styles
     api/chat/route.ts        POST: validate, call the chosen provider, stream text
     api/status/route.ts      GET: is a server key configured?
+    api/ask/route.ts         POST: Book Reader questions and word explanations
+    reader/                  Book Reader page (browser-only)
   lib/
     personas.ts              Persona definitions and starter question
     providers.ts             Providers, models, key headers, API field names
@@ -101,6 +116,11 @@ src/
     chat-types.ts            Shared request types
     streamChat.ts            Browser helper that reads the streamed reply
     useSessionKey.ts         sessionStorage-backed API key
+    reader/extract.ts        PDF → positioned text lines → book (pdf.js)
+    reader/layout.ts         Header/footer removal, reflow, chapter detection, sentence split
+    reader/useSpeech.ts      Read-aloud engine: sentence queue, pause/resume at the word
+    reader/storage.ts        IndexedDB books, localStorage progress/words/settings
+    reader/ask.ts            /api/ask client, dictionary lookup, chapter context
   components/
     PersonaChat.tsx          Screen state and layout
     PersonaPicker.tsx        Character chips and card
@@ -111,6 +131,7 @@ src/
     ComparisonCard.tsx       Previous character's answer
     SettingsCard.tsx         Provider, API key and model
     Portrait.tsx, Markdown.tsx, Card.tsx, CopyButton.tsx
+    reader/                  BookReader, Library, BookView, PageView, PlayerBar, AskPanel, WordBank
 public/portraits/            Illustrated SVG portraits
 ```
 
