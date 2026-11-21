@@ -1,5 +1,6 @@
 "use client";
 
+import { DEFAULT_TTS_MODEL, type CheckIns, type ReadingStyle, type VoiceEngine } from "./voice-options";
 import type { BookSummary, ParsedBook, ReadingProgress, StoredBook, WordEntry } from "./types";
 
 /**
@@ -111,8 +112,23 @@ export interface VoiceSettings {
   voiceURI: string;
   rate: number;
   pitch: number;
+  engine: VoiceEngine;
+  style: ReadingStyle;
+  openaiVoice: string;
+  openaiModel: string;
+  checkIns: CheckIns;
 }
-export const getVoiceSettings = () => readJson<VoiceSettings>("reader:voice", { voiceURI: "", rate: 1, pitch: 1 });
+const DEFAULT_VOICE: VoiceSettings = {
+  voiceURI: "",
+  rate: 1,
+  pitch: 1,
+  engine: "device",
+  style: "storyteller",
+  openaiVoice: "coral",
+  openaiModel: DEFAULT_TTS_MODEL,
+  checkIns: "off",
+};
+export const getVoiceSettings = (): VoiceSettings => ({ ...DEFAULT_VOICE, ...readJson<Partial<VoiceSettings>>("reader:voice", {}) });
 export const setVoiceSettings = (v: VoiceSettings) => writeJson("reader:voice", v);
 
 export interface AiSettings {
