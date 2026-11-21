@@ -10,7 +10,7 @@ A student picks an AI character, asks a question, and sees how the system instru
 
 A second app in the same project: add a PDF and it becomes a chaptered book that reads itself aloud.
 
-- **PDF → book.** The PDF is parsed in the browser with pdf.js. Running headers and page numbers are removed, hyphenated words rejoined and lines reflowed into paragraphs, shown as two facing pages (one on phones). An **Original** view shows the exact printed pages.
+- **PDF → book.** The PDF is parsed in the browser with pdf.js. Running headers and page numbers are removed, hyphenated words rejoined and lines reflowed into paragraphs, shown as two facing pages (one on phones). An **Original** view shows the exact printed pages, with the sentence and word being read highlighted on the page itself; tap a line there to read from it.
 - **Chapters.** Taken from the PDF's bookmarks when it has them, otherwise found from headings ("Chapter 3", "Prologue", large titles), otherwise grouped by pages.
 - **Read aloud.** Uses the most natural voice your device offers (Edge/Chrome "Natural"/"Online" voices, Apple "Premium"/"Enhanced" voices). Pause, play and resume from the same word; skip sentences or chapters; change speed, voice and pitch; click any sentence to read from there. The current sentence and word are highlighted and pages turn by themselves. The next chapter starts automatically, and headphone buttons work.
 - **Ask questions.** Summarise a chapter, explain the passage you just heard, quiz yourself, or ask anything. The AI gets the current chapter's text and sentence (`POST /api/ask`, same providers and keys as Persona Chat; Claude Sonnet 5.5 by default). Answers can be read aloud.
@@ -121,6 +121,7 @@ src/
     reader/useSpeech.ts      Read-aloud engine: sentence queue, pause/resume at the word
     reader/storage.ts        IndexedDB books, localStorage progress/words/settings
     reader/ask.ts            /api/ask client, dictionary lookup, chapter context
+    reader/positions.ts      Sentence/word → boxes on the original PDF page, and back
   components/
     PersonaChat.tsx          Screen state and layout
     PersonaPicker.tsx        Character chips and card

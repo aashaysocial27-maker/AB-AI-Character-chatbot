@@ -3,10 +3,36 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, LoaderCircle } from "lucide-react";
 import { openPdf, type PdfDocument } from "@/lib/reader/pdfjs";
+import type { PageRect } from "@/lib/reader/positions";
 
-/** The original PDF page, exactly as printed, for books with pictures or tricky layouts. */
-export function PageView({ file, page, pageCount, onPage }: { file: Blob; page: number; pageCount: number; onPage: (p: number) => void }) {
+type Viewport = ReturnType<Awaited<ReturnType<PdfDocument["getPage"]>>["getViewport"]>;
+
+/**
+ * The original PDF page, exactly as printed. The sentence being read (and the
+ * word, where the voice reports words) is marked on the page itself, and a tap
+ * on a line starts reading from there.
+ */
+export function PageView({
+  file,
+  page,
+  pageCount,
+  onPage,
+  sentence = [],
+  word = [],
+  onPoint,
+}: {
+  file: Blob;
+  page: number;
+  pageCount: number;
+  onPage: (p: number) => void;
+  /** Boxes of the sentence being read (any page; only this page's are drawn). */
+  sentence?: PageRect[];
+  word?: PageRect[];
+  /** A tap on the page, in PDF coordinates (0-based page index). */
+  onPoint?: (pageIndex: number, x: number, y: number) => void;
+}) {
   const [doc, setDoc] = useState<PdfDocument | null>(null);
+  const [viewport, setViewport] = useState<{ page: number; vp: Viewport } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -58,6 +84,7 @@ export function PageView({ file, page, pageCount, onPage }: { file: Blob; page: 
       c.style.height = `${Math.floor(viewport.height / dpr)}px`;
       task = p.render({ canvas: c, viewport });
       await task.promise;
+      if (!cancelled) setViewport({ page, vp: p.getViewport({ scale }) });
     })()
       .catch(() => {
         // Cancelled by a newer render.
@@ -75,7 +102,25 @@ export function PageView({ file, page, pageCount, onPage }: { file: Blob; page: 
         {error ? (
           <p className="text-sm text-muted">{error}</p>
         ) : (
-          <canvas ref={canvas} className="rounded-md bg-white shadow-card" aria-label={`Page ${page} of the original PDF`} />
+          <div className="relative">
+            <canvas
+              ref={canvas}
+              className={`block rounded-md bg-white shadow-card ${onPoint ? "cursor-pointer" : ""}`}
+              aria-label={`Page ${page} of the original PDF`}
+              onClick={(e) => {
+                if (!onPoint || !viewport || viewport.page !== page) return;
+                const r = e.currentTarget.getBoundingClientRect();
+                const [x, y] = viewport.vp.convertToPdfPoint(e.clientX - r.left, e.clientY - r.top);
+                onPoint(page - 1, x, y);
+              }}
+            />
+            {viewport?.page === page && (
+              <>
+                <Marks rects={sentence} page={page} vp={viewport.vp} className="bg-[#f5c542]/35 mix-blend-multiply transition-all duration-150" pad={0.12} />
+                <Marks rects={word} page={page} vp={viewport.vp} className="bg-[#f2a33a]/55 mix-blend-multiply" pad={0.04} />
+              </>
+            )}
+          </div>
         )}
         {(rendering || !doc) && !error && (
           <LoaderCircle className="absolute size-6 animate-spin text-muted" strokeWidth={1.5} aria-hidden />
@@ -105,5 +150,27 @@ export function PageView({ file, page, pageCount, onPage }: { file: Blob; page: 
         </button>
       </div>
     </div>
+  );
+}
+
+/** Highlight boxes drawn over the canvas. */
+function Marks({ rects, page, vp, className, pad }: { rects: PageRect[]; page: number; vp: Viewport; className: string; pad: number }) {
+  return (
+    <>
+      {rects
+        .filter((r) => r.page === page - 1)
+        .map((r, i) => {
+          const [ax, ay] = vp.convertToViewportPoint(r.x0 - r.h * pad, r.base - r.h * 0.3) as number[];
+          const [bx, by] = vp.convertToViewportPoint(r.x1 + r.h * pad, r.base + r.h * 0.92) as number[];
+          return (
+            <span
+              key={i}
+              aria-hidden
+              className={`pointer-events-none absolute rounded-[3px] ${className}`}
+              style={{ left: Math.min(ax, bx), top: Math.min(ay, by), width: Math.abs(bx - ax), height: Math.abs(by - ay) }}
+            />
+          );
+        })}
+    </>
   );
 }

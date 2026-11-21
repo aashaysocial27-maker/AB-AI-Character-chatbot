@@ -8,6 +8,7 @@ import { useSessionKey } from "@/lib/useSessionKey";
 import { chapterContext, lookupWord, streamAsk } from "@/lib/reader/ask";
 import { parsePdf } from "@/lib/reader/extract";
 import { splitUnits } from "@/lib/reader/layout";
+import { offsetAt, rectsFor, unitRanges } from "@/lib/reader/positions";
 import {
   deleteBook,
   getAiSettings,
@@ -100,20 +101,24 @@ export function BookReader() {
 
   // ---- current chapter as speakable units ----
   const chapter = book?.chapters[chapterIdx] ?? null;
-  const { unitsByParagraph, unitTexts, unitParagraph } = useMemo(() => {
+  const { unitsByParagraph, unitTexts, unitParagraph, unitStart } = useMemo(() => {
     const byPara: { text: string; index: number }[][] = [];
     const texts: string[] = [];
     const para: number[] = [];
+    const starts: number[] = [];
     chapter?.paragraphs.forEach((p, pi) => {
+      const units = splitUnits(p);
+      const ranges = unitRanges(p, units);
       byPara.push(
-        splitUnits(p).map((text) => {
+        units.map((text, k) => {
           texts.push(text);
           para.push(pi);
+          starts.push(ranges[k][0]);
           return { text, index: texts.length - 1 };
         }),
       );
     });
-    return { unitsByParagraph: byPara, unitTexts: texts, unitParagraph: para };
+    return { unitsByParagraph: byPara, unitTexts: texts, unitParagraph: para, unitStart: starts };
   }, [chapter]);
 
   const autoplay = useRef(false);
@@ -133,8 +138,12 @@ export function BookReader() {
   });
 
   // When the chapter changes: jump to the saved spot, or keep reading from the top.
+  // (Not when the same chapter is only refreshed, e.g. after line positions are added.)
+  const chapterKey = book && chapter ? `${book.id}:${chapterIdx}` : "";
+  const lastChapterKey = useRef("");
   useEffect(() => {
-    if (!chapter) return;
+    if (!chapter || chapterKey === lastChapterKey.current) return;
+    lastChapterKey.current = chapterKey;
     if (autoplay.current) {
       autoplay.current = false;
       speech.speakFrom(0);
@@ -144,18 +153,36 @@ export function BookReader() {
     pendingUnit.current = null;
     // Only when the chapter itself changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chapter]);
+  }, [chapterKey]);
 
   // Remember where the reader is.
   useEffect(() => {
     if (book) setProgress(book.id, { chapter: chapterIdx, unit: speech.index, updatedAt: Date.now() });
   }, [book, chapterIdx, speech.index]);
 
-  // The Original view follows the reading position (roughly, by share of the chapter).
-  const followPage = chapter
-    ? chapter.startPage +
-      Math.round((unitTexts.length ? speech.index / unitTexts.length : 0) * (chapter.endPage - chapter.startPage))
-    : 1;
+  // Where the sentence and word being read sit on the original pages.
+  const sentenceRects = useMemo(() => {
+    const p = unitParagraph[speech.index];
+    if (!chapter?.spans || p === undefined) return [];
+    const start = unitStart[speech.index];
+    return rectsFor(chapter.spans[p], start, start + (unitTexts[speech.index]?.trimEnd().length ?? 0));
+  }, [chapter, unitParagraph, unitStart, unitTexts, speech.index]);
+  const wordRects = useMemo(() => {
+    const w = speech.word;
+    const p = w ? unitParagraph[w.unit] : undefined;
+    if (!w || !chapter?.spans || p === undefined) return [];
+    const start = unitStart[w.unit] + w.start;
+    return rectsFor(chapter.spans[p], start, start + Math.max(1, w.length));
+  }, [chapter, unitParagraph, unitStart, speech.word]);
+
+  // The Original view follows the reading position: the exact page when line
+  // positions are known, otherwise estimated by share of the chapter.
+  const followPage = sentenceRects.length
+    ? sentenceRects[0].page + 1
+    : chapter
+      ? chapter.startPage +
+        Math.round((unitTexts.length ? speech.index / unitTexts.length : 0) * (chapter.endPage - chapter.startPage))
+      : 1;
   const originalPage =
     pageOverride && pageOverride.chapter === chapterIdx && pageOverride.unit === speech.index ? pageOverride.page : followPage;
 
@@ -237,6 +264,20 @@ export function BookReader() {
     setView("book");
     setPanel(null);
     setSelection(null);
+    if (b.chapters.some((c) => c.paragraphs.length > 0 && !c.spans)) void addLinePositions(b);
+  }
+
+  /** Books saved before line positions existed: re-read the stored PDF once to add them. */
+  async function addLinePositions(b: StoredBook) {
+    try {
+      const fresh = await parsePdf(new File([b.file], `${b.title}.pdf`, { type: "application/pdf" }));
+      if (fresh.chapters.length !== b.chapters.length) return; // structure changed; keep the old book as it is
+      const upgraded: StoredBook = { ...b, chapters: fresh.chapters };
+      await saveBook(upgraded, b.file).catch(() => {});
+      setBook((cur) => (cur && cur.id === b.id ? { ...upgraded, addedAt: cur.addedAt } : cur));
+    } catch {
+      // Keep the book without line positions; the Original view still follows by page.
+    }
   }
 
   async function openBook(id: string) {
@@ -532,6 +573,19 @@ export function BookReader() {
                 onPage={(p) =>
                   setPageOverride({ chapter: chapterIdx, unit: speech.index, page: Math.max(1, Math.min(book.pageCount, p)) })
                 }
+                sentence={sentenceRects}
+                word={wordRects}
+                onPoint={(pageIndex, x, y) => {
+                  const hit = offsetAt(chapter.spans, pageIndex, x, y);
+                  if (!hit) return;
+                  const unit = unitsByParagraph[hit.paragraph]?.find(
+                    (u, k, all) => k === all.length - 1 || unitStart[all[k + 1].index] > hit.offset,
+                  );
+                  if (!unit) return;
+                  setPageOverride(null);
+                  if (speech.status === "playing") speech.play(unit.index);
+                  else speech.seek(unit.index);
+                }}
               />
             )}
           </div>

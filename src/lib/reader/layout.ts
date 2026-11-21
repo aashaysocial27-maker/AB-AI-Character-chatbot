@@ -6,7 +6,13 @@
  * Pure functions with no pdf.js dependency, so they are easy to test.
  */
 
-import type { Chapter, ParsedBook } from "./types";
+import type { Chapter, LineSpan, ParsedBook } from "./types";
+
+/** A paragraph plus where each piece of it sits on the original pages. */
+interface Para {
+  text: string;
+  spans: LineSpan[];
+}
 
 export interface Line {
   text: string;
@@ -18,9 +24,15 @@ export interface Line {
   y: number;
   /** Font size (text height). */
   h: number;
+  /** Baseline in raw PDF coordinates (from the bottom), for drawing on the original page. */
+  base?: number;
+  /** Flat pairs [char offset, x, …]: where each text run of the line starts on the page. */
+  anchors?: number[];
 }
 
 export interface PageLines {
+  /** 0-based page index in the PDF. */
+  index?: number;
   width: number;
   height: number;
   lines: Line[];
@@ -168,18 +180,19 @@ function tidyTitle(title: string): string {
   return t;
 }
 
-/** Reflows the lines of a page range into paragraphs. */
-export function reflow(pages: PageLines[], metrics: Metrics): string[] {
+/** Reflows the lines of a page range into paragraphs, remembering where each line came from. */
+export function reflow(pages: PageLines[], metrics: Metrics): Para[] {
   const { bodyH, lineGap } = metrics;
-  const paragraphs: string[] = [];
+  const paragraphs: Para[] = [];
   let current = "";
+  let spans: LineSpan[] = [];
   let prevLine: Line | null = null;
   let prevRight = 0;
 
   const flush = () => {
-    const text = current.replace(/\s+/g, " ").trim();
-    if (text) paragraphs.push(text);
+    if (current.trim()) paragraphs.push({ text: current, spans });
     current = "";
+    spans = [];
   };
 
   for (const page of pages) {
@@ -189,7 +202,7 @@ export function reflow(pages: PageLines[], metrics: Metrics): string[] {
     let first = true;
 
     for (const line of page.lines) {
-      const text = line.text.trim();
+      const text = line.text.replace(/\s+/g, " ").trim();
       if (!text) continue;
       const indented = line.x > left + bodyH * 0.9 && line.x < left + bodyH * 6;
       const centered = Math.abs((line.x + line.xEnd) / 2 - (left + right) / 2) < bodyH && line.xEnd - line.x < (right - left) * 0.6;
@@ -215,10 +228,19 @@ export function reflow(pages: PageLines[], metrics: Metrics): string[] {
       }
 
       if (breakHere) flush();
+      let start: number;
       if (current.endsWith("-") && /^[a-z]/.test(text) && !/\s-$/.test(current)) {
-        current = current.slice(0, -1) + text; // re-join a hyphenated word
+        current = current.slice(0, -1); // re-join a hyphenated word
+        const prev = spans[spans.length - 1];
+        if (prev) prev[6] = Math.min(prev[6], current.length);
+        start = current.length;
+        current += text;
       } else {
+        start = current ? current.length + 1 : 0;
         current = current ? `${current} ${text}` : text;
+      }
+      if (page.index !== undefined && line.base !== undefined) {
+        spans.push([page.index, line.x, line.xEnd, line.base, line.h, start, current.length, line.anchors ?? []]);
       }
       if (centered && !headingSize) flush();
       prevLine = line;
@@ -233,12 +255,12 @@ export function reflow(pages: PageLines[], metrics: Metrics): string[] {
 const plain = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 /** The chapter title is shown as a heading, so drop its copy at the top of the text. */
-function dropTitleLines(paragraphs: string[], title: string): string[] {
+function dropTitleLines(paragraphs: Para[], title: string): Para[] {
   const t = plain(title);
   if (!t) return paragraphs;
   let k = 0;
   while (k < Math.min(3, paragraphs.length)) {
-    const p = plain(paragraphs[k]);
+    const p = plain(paragraphs[k].text);
     if (!p || p.length > t.length + 2 || !t.includes(p)) break;
     k++;
   }
@@ -297,7 +319,8 @@ export function buildBook(
       title,
       startPage: from.page + 1,
       endPage: endPage + 1,
-      paragraphs,
+      paragraphs: paragraphs.map((q) => q.text),
+      spans: paragraphs.map((q) => q.spans),
     });
   };
 

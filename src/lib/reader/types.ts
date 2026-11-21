@@ -9,7 +9,17 @@ export interface Chapter {
   endPage: number;
   /** Reflowed paragraphs, in reading order. */
   paragraphs: string[];
+  /** For each paragraph, where its lines sit on the original PDF pages. Missing in books saved before this existed. */
+  spans?: LineSpan[][];
 }
+
+/**
+ * One line of a paragraph on the original page:
+ * [page index (0-based), x left, x right, baseline (PDF units from bottom), font size, start char, end char].
+ * The char range is the line's slice of the paragraph text. The optional last
+ * entry holds flat [char offset in line, x] pairs where each text run starts.
+ */
+export type LineSpan = [number, number, number, number, number, number, number, number[]?];
 
 export interface ParsedBook {
   id: string;
