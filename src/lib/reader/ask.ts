@@ -6,7 +6,7 @@ import { getProvider } from "../providers";
 export interface AskBody {
   provider: string;
   model: string;
-  task: "ask" | "define";
+  task: "ask" | "define" | "explain";
   bookTitle: string;
   chapterTitle: string;
   context: string;

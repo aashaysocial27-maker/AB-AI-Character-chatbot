@@ -2,13 +2,26 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, BookA, BookOpen, BookmarkPlus, FileText, ListTree, Sparkles, Volume2, X } from "lucide-react";
+import { ArrowLeft, BookA, BookOpen, BookmarkPlus, FileText, GraduationCap, ListTree, LoaderCircle, Play, Sparkles, Volume2, X } from "lucide-react";
 import { getProvider, type ProviderId } from "@/lib/providers";
 import { useSessionKey } from "@/lib/useSessionKey";
 import { chapterContext, lookupWord, streamAsk } from "@/lib/reader/ask";
 import { parsePdf } from "@/lib/reader/extract";
 import { splitUnits } from "@/lib/reader/layout";
 import { offsetAt, rectsFor, unitRanges } from "@/lib/reader/positions";
+import {
+  clearProgressStore,
+  getBookmarks,
+  getHeard,
+  layoutOf,
+  markHeard,
+  setBookmarks as storeBookmarks,
+  setHeard as storeHeard,
+  setSummary,
+  statsOf,
+  type Bookmark,
+  type Heard,
+} from "@/lib/reader/progress";
 import {
   deleteBook,
   getAiSettings,
@@ -27,6 +40,7 @@ import {
 import type { BookSummary, StoredBook, WordEntry } from "@/lib/reader/types";
 import { useSpeech, useVoices } from "@/lib/reader/useSpeech";
 import { AskPanel } from "./AskPanel";
+import { ChapterPanel } from "./ChapterPanel";
 import { BookView, type Selection } from "./BookView";
 import { Library } from "./Library";
 import { PageView } from "./PageView";
@@ -68,6 +82,18 @@ export function BookReader() {
   const [model, setModel] = useState(ai.model);
   const [apiKey, setApiKey] = useSessionKey(providerId);
   const [seed, setSeed] = useState<{ text: string; n: number } | null>(null);
+
+  const [openaiKey, setOpenaiKey] = useSessionKey("openai");
+
+  // ---- progress ----
+  const [heard, setHeardState] = useState<Heard>({});
+  const [bookmarks, setBookmarkState] = useState<Bookmark[]>([]);
+  const [resumeCard, setResumeCard] = useState<{ chapter: number; unit: number; page: number; snippet: string } | null>(null);
+  /** A teacher check-in in progress: the explanation text as it arrives. */
+  const [teacher, setTeacher] = useState<{ text: string; loading: boolean } | null>(null);
+  const teacherThen = useRef<(() => void) | null>(null);
+  const teacherAbort = useRef<AbortController | null>(null);
+  const checkInFrom = useRef(0);
 
   // ---- word bank ----
   const [words, setWordsState] = useState<WordEntry[]>(getWords);
@@ -123,19 +149,114 @@ export function BookReader() {
 
   const autoplay = useRef(false);
   const pendingUnit = useRef<number | null>(null);
+  const paragraphEnds = useMemo(() => unitParagraph.map((p, i) => unitParagraph[i + 1] !== p), [unitParagraph]);
+
+  // ---- progress: which sentences were heard, per chapter and page ----
+  const bookLayout = useMemo(() => (book ? layoutOf(book) : null), [book]);
+  const stats = useMemo(() => (bookLayout ? statsOf(bookLayout, heard) : null), [bookLayout, heard]);
+  const unitPages = bookLayout?.chapters[chapterIdx]?.pages ?? [];
+
+  const updateHeard = (fn: (h: Heard) => Heard) => {
+    if (!book) return;
+    const id = book.id;
+    setHeardState((prev) => {
+      const next = fn(prev);
+      if (next !== prev) storeHeard(id, next);
+      return next;
+    });
+  };
+
+  const goNextChapter = () => {
+    if (book && chapterIdx < book.chapters.length - 1) {
+      autoplay.current = true;
+      setChapterIdx(chapterIdx + 1);
+    }
+  };
 
   const speech = useSpeech({
     units: unitTexts,
+    paragraphEnds,
+    engine: voiceSettings.engine,
+    style: voiceSettings.style,
     voice,
     rate: voiceSettings.rate,
     pitch: voiceSettings.pitch,
+    openai: { apiKey: openaiKey, voice: voiceSettings.openaiVoice, model: voiceSettings.openaiModel },
+    onUnitDone: (i) => updateHeard((h) => markHeard(h, chapterIdx, i, unitTexts.length)),
     onFinished: () => {
-      if (book && chapterIdx < book.chapters.length - 1) {
-        autoplay.current = true;
-        setChapterIdx(chapterIdx + 1);
-      }
+      if (voiceSettings.checkIns !== "off") runCheckIn(checkInFrom.current, unitTexts.length - 1, goNextChapter, true);
+      else goNextChapter();
     },
+    shouldHold: (i) => {
+      if (voiceSettings.checkIns !== "page") return false;
+      const turnsPage = unitPages[i] !== undefined && unitPages[i + 1] !== undefined && unitPages[i + 1] !== unitPages[i];
+      const enough = unitTexts.slice(checkInFrom.current, i + 1).join("").length > 400;
+      return turnsPage && enough;
+    },
+    onHold: (i) => runCheckIn(checkInFrom.current, i, () => speech.resume()),
+    onError: (message) => setToast(message),
   });
+
+  /**
+   * Teacher check-in: pause, have the AI explain what was just read, speak the
+   * explanation in the reading voice, then carry on with `then`.
+   */
+  function runCheckIn(from: number, to: number, then: () => void, chapterEnd = false) {
+    const passage = unitTexts.slice(Math.max(0, from), to + 1).join("").trim().slice(-11_000);
+    checkInFrom.current = to + 1;
+    if (!passage || !book || !chapter) return then();
+    teacherAbort.current?.abort();
+    const controller = new AbortController();
+    teacherAbort.current = controller;
+    teacherThen.current = then;
+    setTeacher({ text: "", loading: true });
+    void (async () => {
+      let text = "";
+      try {
+        for await (const chunk of streamAsk(
+          {
+            provider: providerId,
+            model,
+            task: "explain",
+            bookTitle: book.title,
+            chapterTitle: chapter.title + (chapterEnd ? " (end of chapter)" : ""),
+            context: "",
+            passage,
+            messages: [{ role: "user", text: chapterEnd ? "We just finished this chapter. Explain it briefly." : "Explain what we just read." }],
+          },
+          apiKey,
+          controller.signal,
+        )) {
+          text += chunk;
+          setTeacher({ text, loading: true });
+        }
+      } catch (e) {
+        if (controller.signal.aborted) return;
+        setTeacher(null);
+        teacherThen.current = null;
+        setToast(
+          /key/i.test(String(e))
+            ? "Teacher explanations need an AI key: add one in Ask → AI settings."
+            : e instanceof Error
+              ? e.message
+              : "The teacher could not explain this part.",
+        );
+        return then();
+      }
+      if (controller.signal.aborted) return;
+      setTeacher({ text, loading: false });
+      speech.say(text, () => finishCheckIn());
+    })();
+  }
+
+  /** Ends a check-in (spoken, skipped or interrupted) and carries on reading. */
+  function finishCheckIn() {
+    teacherAbort.current?.abort();
+    const then = teacherThen.current;
+    teacherThen.current = null;
+    setTeacher(null);
+    then?.();
+  }
 
   // When the chapter changes: jump to the saved spot, or keep reading from the top.
   // (Not when the same chapter is only refreshed, e.g. after line positions are added.)
@@ -144,9 +265,10 @@ export function BookReader() {
   useEffect(() => {
     if (!chapter || chapterKey === lastChapterKey.current) return;
     lastChapterKey.current = chapterKey;
+    checkInFrom.current = pendingUnit.current ?? 0;
     if (autoplay.current) {
       autoplay.current = false;
-      speech.speakFrom(0);
+      speech.speakFrom(pendingUnit.current ?? 0);
     } else {
       speech.seek(pendingUnit.current ?? 0);
     }
@@ -159,6 +281,18 @@ export function BookReader() {
   useEffect(() => {
     if (book) setProgress(book.id, { chapter: chapterIdx, unit: speech.index, updatedAt: Date.now() });
   }, [book, chapterIdx, speech.index]);
+
+  // Keep the library card's progress up to date.
+  useEffect(() => {
+    if (!book || !stats) return;
+    setSummary(book.id, {
+      percent: stats.percent,
+      pagesRead: stats.pagesRead.size,
+      pageCount: book.pageCount,
+      chaptersDone: stats.chaptersDone,
+      chapterCount: book.chapters.length,
+    });
+  }, [book, stats]);
 
   // Where the sentence and word being read sit on the original pages.
   const sentenceRects = useMemo(() => {
@@ -197,7 +331,7 @@ export function BookReader() {
         // unsupported action
       }
     };
-    set("play", () => speech.toggle());
+    set("play", () => togglePlay());
     set("pause", () => speech.pause());
     set("nexttrack", () => changeChapter(1));
     set("previoustrack", () => changeChapter(-1));
@@ -213,11 +347,11 @@ export function BookReader() {
       const t = e.target as HTMLElement;
       if (t.closest("input, textarea, select, button, [contenteditable]")) return;
       e.preventDefault();
-      speech.toggle();
+      togglePlay();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [book, speech]);
+  });
 
   useEffect(() => {
     if (!toast) return;
@@ -259,6 +393,18 @@ export function BookReader() {
     const saved = getProgress(b.id);
     const ch = saved && saved.chapter < b.chapters.length ? saved.chapter : 0;
     pendingUnit.current = saved && saved.chapter === ch ? saved.unit : 0;
+    setHeardState(getHeard(b.id));
+    setBookmarkState(getBookmarks(b.id));
+    setTeacher(null);
+    setResumeCard(null);
+    if (saved && (saved.chapter > 0 || saved.unit > 0)) {
+      const units = (b.chapters[ch]?.paragraphs ?? []).flatMap((p) => splitUnits(p));
+      const snippet = units[saved.unit]?.trim() ?? "";
+      if (snippet) {
+        const pages = layoutOf({ ...b, chapters: [b.chapters[ch]] }).chapters[0]?.pages ?? [];
+        setResumeCard({ chapter: ch, unit: saved.unit, page: pages[saved.unit] ?? b.chapters[ch].startPage, snippet });
+      }
+    }
     setBook(b);
     setChapterIdx(ch);
     setView("book");
@@ -291,13 +437,73 @@ export function BookReader() {
     const target = opts?.to ?? chapterIdx + delta;
     if (target < 0 || target >= book.chapters.length || target === chapterIdx) return;
     const wasPlaying = speech.status === "playing";
+    cancelTeacher();
     speech.stop();
     autoplay.current = wasPlaying;
     setChapterIdx(target);
     setSelection(null);
   }
 
+  function cancelTeacher() {
+    teacherAbort.current?.abort();
+    teacherThen.current = null;
+    setTeacher(null);
+  }
+
+  /** Play/pause, which also ends a teacher check-in and goes back to the book. */
+  function togglePlay() {
+    setResumeCard(null);
+    if (teacher) {
+      cancelTeacher();
+      speech.stopAside();
+      speech.resume();
+      return;
+    }
+    speech.toggle();
+  }
+
+  function jumpTo(target: number, unit: number, play = false) {
+    if (!book) return;
+    cancelTeacher();
+    setResumeCard(null);
+    if (target === chapterIdx) {
+      if (play) speech.play(unit);
+      else speech.seek(unit);
+      return;
+    }
+    speech.stop();
+    pendingUnit.current = unit;
+    autoplay.current = play;
+    setChapterIdx(target);
+  }
+
+  function addBookmark() {
+    if (!book || !chapter) return;
+    if (speech.status === "playing") speech.pause();
+    const unit = speech.index;
+    const b: Bookmark = {
+      id: Date.now().toString(36),
+      chapter: chapterIdx,
+      unit,
+      page: unitPages[unit] ?? chapter.startPage,
+      snippet: (unitTexts[unit] ?? "").trim().slice(0, 140),
+      createdAt: Date.now(),
+    };
+    setBookmarkState((prev) => {
+      const next = [...prev.filter((x) => !(x.chapter === b.chapter && x.unit === b.unit)), b];
+      storeBookmarks(book.id, next);
+      return next;
+    });
+    setToast(`Bookmark saved: ${chapter.title}, page ${b.page}. Find it under Chapters → Bookmarks.`);
+  }
+
+  function markChapter(ci: number, read: boolean) {
+    const count = bookLayout?.chapters[ci]?.lengths.length ?? 0;
+    updateHeard((h) => ({ ...h, [ci]: read ? "1".repeat(count) : "" }));
+  }
+
   function closeBook() {
+    cancelTeacher();
     speech.stop();
     setBook(null);
     setSelection(null);
@@ -403,7 +609,10 @@ export function BookReader() {
           error={error}
           onFile={(f) => void addFile(f)}
           onOpen={(id) => void openBook(id)}
-          onDelete={(id) => void deleteBook(id).then(() => listBooks().then(setBooks))}
+          onDelete={(id) => {
+            clearProgressStore(id);
+            void deleteBook(id).then(() => listBooks().then(setBooks));
+          }}
         />
       </main>
     );
@@ -417,48 +626,34 @@ export function BookReader() {
         ? "Chapters found from headings in the text."
         : "No chapter headings found, so pages are grouped.";
 
-  const chapterList = (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between border-b border-line px-4 py-3">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-          <ListTree className="size-4" strokeWidth={1.75} aria-hidden /> Chapters
-        </h2>
-        <button
-          type="button"
-          onClick={() => setPanel(null)}
-          className="grid size-8 place-items-center rounded-full text-muted hover:bg-page lg:hidden"
-          aria-label="Close chapters"
-        >
-          <X className="size-4" strokeWidth={1.75} />
-        </button>
-      </div>
-      <ol className="min-h-0 flex-1 overflow-y-auto p-2">
-        {book.chapters.map((c, i) => (
-          <li key={c.id}>
-            <button
-              type="button"
-              onClick={() => {
-                changeChapter(0, { to: i });
-                if (window.innerWidth < 1024) setPanel(null);
-              }}
-              aria-current={i === chapterIdx ? "true" : undefined}
-              className={`flex w-full items-baseline gap-2.5 rounded-xl px-3 py-2 text-left text-sm transition-colors ${
-                i === chapterIdx ? "bg-ink text-white" : "text-ink/85 hover:bg-page"
-              }`}
-            >
-              <span className={`w-5 shrink-0 text-right text-[11px] tabular-nums ${i === chapterIdx ? "text-white/60" : "text-muted"}`}>
-                {i + 1}
-              </span>
-              <span className="min-w-0 flex-1 leading-snug">{c.title}</span>
-              {i === chapterIdx && speech.status === "playing" && (
-                <Volume2 className="size-3.5 shrink-0 self-center" strokeWidth={1.75} aria-label="reading" />
-              )}
-            </button>
-          </li>
-        ))}
-      </ol>
-      <p className="border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-muted">{sourceNote}</p>
-    </div>
+  const chapterList = stats && (
+    <ChapterPanel
+      chapters={book.chapters}
+      current={chapterIdx}
+      playing={speech.status === "playing"}
+      stats={stats}
+      pageCount={book.pageCount}
+      sourceNote={sourceNote}
+      bookmarks={bookmarks}
+      onOpen={(i) => {
+        changeChapter(0, { to: i });
+        if (window.innerWidth < 1024) setPanel(null);
+      }}
+      onMark={markChapter}
+      onReset={() => updateHeard(() => ({}))}
+      onBookmark={(bm) => {
+        jumpTo(bm.chapter, bm.unit);
+        if (window.innerWidth < 1024) setPanel(null);
+      }}
+      onDeleteBookmark={(id) =>
+        setBookmarkState((prev) => {
+          const next = prev.filter((x) => x.id !== id);
+          storeBookmarks(book.id, next);
+          return next;
+        })
+      }
+      onClose={() => setPanel(null)}
+    />
   );
 
   const rightOpen = panel === "ask" || panel === "words";
@@ -548,6 +743,31 @@ export function BookReader() {
               <FileText className="size-3.5" strokeWidth={1.75} aria-hidden /> Original
             </button>
           </div>
+          {resumeCard && speech.status !== "playing" && (
+            <div className="mb-2 flex items-center gap-3 rounded-2xl border border-[#cfe8da] bg-[#effaf3] px-3.5 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-[#1f6b47]">
+                  Continue where you stopped · {book.chapters[resumeCard.chapter]?.title} · page {resumeCard.page}
+                </p>
+                <p className="truncate font-serif text-[13px] italic text-ink/70">“{resumeCard.snippet}”</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => jumpTo(resumeCard.chapter, resumeCard.unit, true)}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#1f6b47] px-3.5 py-1.5 text-xs font-medium text-white"
+              >
+                <Play className="size-3.5" fill="currentColor" strokeWidth={0} /> Continue
+              </button>
+              <button
+                type="button"
+                onClick={() => setResumeCard(null)}
+                className="grid size-7 shrink-0 place-items-center rounded-full text-[#1f6b47]/70 hover:bg-white"
+                aria-label="Dismiss"
+              >
+                <X className="size-3.5" strokeWidth={1.75} />
+              </button>
+            </div>
+          )}
           <div className="min-h-0 flex-1 pt-2 sm:pt-0">
             {view === "book" ? (
               <BookView
@@ -575,6 +795,7 @@ export function BookReader() {
                 }
                 sentence={sentenceRects}
                 word={wordRects}
+                pageRead={stats?.pagesRead.has(originalPage) ?? false}
                 onPoint={(pageIndex, x, y) => {
                   const hit = offsetAt(chapter.spans, pageIndex, x, y);
                   if (!hit) return;
@@ -589,27 +810,74 @@ export function BookReader() {
               />
             )}
           </div>
-          <div className="pt-3">
+          <div className="relative pt-3">
+          {teacher && (
+            <div className="absolute inset-x-0 bottom-full z-20 mb-1 rounded-2xl border border-[#d9d2f5] bg-[#f6f3ff]/95 px-4 py-3 shadow-card backdrop-blur">
+              <div className="flex items-center justify-between gap-2">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-[#4b3aa8]">
+                  <GraduationCap className="size-4" strokeWidth={1.75} aria-hidden /> Teacher
+                  {teacher.loading && <LoaderCircle className="size-3.5 animate-spin" strokeWidth={2} aria-label="thinking" />}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    speech.stopAside();
+                    finishCheckIn();
+                  }}
+                  className="rounded-full border border-[#d9d2f5] bg-white px-3 py-1 text-xs font-medium text-[#4b3aa8] hover:border-[#4b3aa8]/40"
+                >
+                  Continue reading
+                </button>
+              </div>
+              <p className="mt-1.5 font-serif text-[15px] leading-relaxed text-ink/85">{teacher.text || "Thinking about what we just read…"}</p>
+            </div>
+          )}
             <PlayerBar
               status={speech.status}
+              buffering={speech.buffering}
               supported={supported}
               unit={speech.index}
               unitCount={unitTexts.length}
               chapterTitle={chapter.title}
+              chapterPercent={stats?.chapterPercent[chapterIdx] ?? 0}
               hasPrevChapter={chapterIdx > 0}
               hasNextChapter={chapterIdx < book.chapters.length - 1}
-              voices={voices}
-              voiceURI={voice?.voiceURI ?? ""}
-              rate={voiceSettings.rate}
-              pitch={voiceSettings.pitch}
-              onToggle={speech.toggle}
-              onStop={speech.stop}
+              onToggle={togglePlay}
+              onStop={() => {
+                cancelTeacher();
+                speech.stop();
+              }}
               onSkip={(d) => speech.seek(speech.index + d)}
               onChapter={(d) => changeChapter(d)}
               onSeek={speech.seek}
-              onVoice={(uri) => updateVoice({ voiceURI: uri })}
-              onRate={(rate) => updateVoice({ rate })}
-              onPitch={(pitch) => updateVoice({ pitch })}
+              onBookmark={addBookmark}
+              voice={{
+                engine: voiceSettings.engine,
+                style: voiceSettings.style,
+                checkIns: voiceSettings.checkIns,
+                voices,
+                voiceURI: voice?.voiceURI ?? "",
+                rate: voiceSettings.rate,
+                pitch: voiceSettings.pitch,
+                openaiVoice: voiceSettings.openaiVoice,
+                openaiModel: voiceSettings.openaiModel,
+                openaiKey,
+                onEngine: (engine) => updateVoice({ engine }),
+                onStyle: (style) => updateVoice({ style }),
+                onCheckIns: (checkIns) => updateVoice({ checkIns }),
+                onVoice: (voiceURI) => updateVoice({ voiceURI }),
+                onRate: (rate) => updateVoice({ rate }),
+                onPitch: (pitch) => updateVoice({ pitch }),
+                onOpenaiVoice: (openaiVoice) => updateVoice({ openaiVoice }),
+                onOpenaiModel: (openaiModel) => updateVoice({ openaiModel: openaiModel || "gpt-4o-mini-tts" }),
+                onOpenaiKey: setOpenaiKey,
+                onPreview: () =>
+                  speech.say(
+                    voiceSettings.style === "teacher"
+                      ? "Hello! I'll read this book with you slowly and clearly, and we'll stop to think about the important ideas."
+                      : "Once upon a time, in a quiet village by the sea, a story was waiting to be told. Shall we begin?",
+                  ),
+              }}
             />
           </div>
         </section>

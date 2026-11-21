@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { BookOpen, FileText, LoaderCircle, Upload, X } from "lucide-react";
+import { getSummary } from "@/lib/reader/progress";
 import type { BookSummary } from "@/lib/reader/types";
 
 /** Home screen of the reader: drop a PDF, or pick a book read before. */
@@ -126,6 +127,7 @@ export function Library({
                     <span className="mt-1 block text-xs text-muted">
                       {b.chapterCount} chapters · {b.pageCount} pages
                     </span>
+                    <ProgressLine id={b.id} />
                   </span>
                 </button>
                 <button
@@ -144,5 +146,22 @@ export function Library({
         </section>
       )}
     </div>
+  );
+}
+
+/** Reading progress saved for a book: a thin bar and "35% · 4 of 13 pages". */
+function ProgressLine({ id }: { id: string }) {
+  const p = getSummary(id);
+  if (!p || p.percent < 0.5) return <span className="mt-1.5 block text-[11px] text-muted">Not started</span>;
+  const pct = Math.round(p.percent);
+  return (
+    <span className="mt-2 block w-40">
+      <span className="block h-1 overflow-hidden rounded-full bg-line">
+        <span className="block h-full rounded-full bg-[#2e9e6a]" style={{ width: `${pct}%` }} />
+      </span>
+      <span className="mt-1 block text-[11px] text-muted">
+        {pct >= 99 ? "Finished" : `${pct}% read`} · {p.pagesRead} of {p.pageCount} pages
+      </span>
+    </span>
   );
 }

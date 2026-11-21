@@ -20,6 +20,7 @@ export function PageView({
   sentence = [],
   word = [],
   onPoint,
+  pageRead = false,
 }: {
   file: Blob;
   page: number;
@@ -30,6 +31,8 @@ export function PageView({
   word?: PageRect[];
   /** A tap on the page, in PDF coordinates (0-based page index). */
   onPoint?: (pageIndex: number, x: number, y: number) => void;
+  /** This page has been listened to. */
+  pageRead?: boolean;
 }) {
   const [doc, setDoc] = useState<PdfDocument | null>(null);
   const [viewport, setViewport] = useState<{ page: number; vp: Viewport } | null>(null);
@@ -138,6 +141,7 @@ export function PageView({
         </button>
         <span className="tabular-nums">
           PDF page {page} of {pageCount}
+          {pageRead && <span className="ml-1.5 rounded-full bg-[#e3f4ea] px-1.5 py-0.5 text-[10.5px] font-medium text-[#1f6b47]">✓ read</span>}
         </span>
         <button
           type="button"
